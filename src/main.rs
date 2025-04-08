@@ -16,7 +16,7 @@ type Tx = Sender<AppEvent>;
 
 enum AppEvent {
     Tick,
-    Quit,
+    Quit(i32),
     ModifyTimer(i32),
 }
 
@@ -26,9 +26,9 @@ fn events(tx: Tx) {
     thread::spawn(move || loop {
         if let Ok(CEvent::Key(KeyEvent { code, modifiers })) = event::read() {
             match code {
-                KeyCode::Esc => drop(tx.send(AppEvent::Quit)),
-                KeyCode::Char('c') if modifiers.contains(KeyMods::CONTROL) => drop(tx.send(AppEvent::Quit)),
-                KeyCode::Char('q') => drop(tx.send(AppEvent::Quit)),
+                KeyCode::Esc => drop(tx.send(AppEvent::Quit(0))),
+                KeyCode::Char('c') if modifiers.contains(KeyMods::CONTROL) => drop(tx.send(AppEvent::Quit(1))),
+                KeyCode::Char('q') => drop(tx.send(AppEvent::Quit(0))),
                 KeyCode::Char('s') => drop(tx.send(AppEvent::ModifyTimer(-1))),
                 KeyCode::Char('S') => drop(tx.send(AppEvent::ModifyTimer(1))),
                 KeyCode::Char('m') => drop(tx.send(AppEvent::ModifyTimer(-60))),
@@ -81,6 +81,7 @@ struct AfkConfig {
     message_padding: (u16, u16),
     timer_padding: (u16, u16),
     center_timer: bool,
+    quit_at_zero: bool,
 }
 
 impl Default for AfkConfig {
@@ -101,6 +102,7 @@ impl Default for AfkConfig {
             message_padding: (2, 2),
             timer_padding: (0, 2),
             center_timer: false,
+            quit_at_zero: false,
         }
     }
 }
@@ -161,6 +163,7 @@ fn parse_args(args: &[String]) -> Option<AfkConfig> {
                     None => show_error!(&format!("Missing color after {}.", arg)),
                 }
             }
+            "-q" => config.quit_at_zero = true,
             "-0" => config.show_zeroes = false,
             "-f" => config.use_font = true,
             "-z" => config.center_timer = true,
@@ -293,15 +296,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     tick_timer(tx);
 
     stdout.queue(MoveTo(0, 0))?;
-
     // print the message one time. resizing the window too small will erase whatever goes past the window edge
     // cast now, so we don't cast muiltiple later
     // SAFE/LOSSLESS: because it came from a u16 anyway
     let offset_y = (print_words(&mut stdout, &Renderer::new(words_font), &config)? + config.timer_padding.1) as i32;
 
+    let mut term_size = terminal::size()?;
     let renderer = Renderer::new(num_font);
+    let mut exit_code: i32 = 0;
 
     loop {
+        if term_size != terminal::size()? {
+            let _ = terminal::Clear(terminal::ClearType::All);
+            term_size = terminal::size()?;
+        }
         if total_seconds == 0 && !config.allow_negative {
             config.flip_blinker();
         } else {
@@ -325,10 +333,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let mut num_y_offset = 0;
 
+            let term_width = terminal::size()?.0;
             if config.center_timer {
                 // if the text is empty it does not matter that we do not update the offset_x
                 if let Some(max_width) = lines.iter().map(String::len).max() {
-                    let term_width = terminal::size()?.0;
                     offset_x = (term_width - max_width as u16) / 2;
                 }
             }
@@ -352,9 +360,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 AppEvent::Tick => {
                     if total_seconds > 0 || config.allow_negative {
                         total_seconds -= 1;
+                    } else if total_seconds <= 0 {
+                        break;
                     }
                 }
-                AppEvent::Quit => break,
+                AppEvent::Quit(c) => {
+                    exit_code = c;
+                    break;
+                }
                 AppEvent::ModifyTimer(s) => {
                     total_seconds += s;
                     if total_seconds < 0 && !config.allow_negative {
@@ -369,5 +382,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     cleanup(&mut stdout);
 
+    if exit_code > 0 {
+        std::process::exit(exit_code)
+    }
     Ok(())
 }

@@ -15,6 +15,8 @@ Colors: Black, Red, Green, Yellow, Blue, Purple, Cyan, White
 
 -k Allow countdown to go negative / Stopwatch mode
 
+-q Quit the timer once zero
+
 -0 Hide hour or minutes when zero
 
 -f Use figgle font for message
