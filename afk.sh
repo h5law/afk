@@ -1,6 +1,5 @@
 #!/bin/sh -
 
-AFK=$(which afk)
 MINS=30
 LOOPS=1
 SLEEP_MINS=15
@@ -14,8 +13,7 @@ fi
 [ $# -gt 3 ] && echo "too many args" && exit 1;
 
 for ((i=0; i < ${LOOPS}; i++)); do
-	${AFK} "Work" -p 0 -t 0 -z -0 -c "Purple" -M "${MINS}"
-	[ $? -gt 0 ] && exit
-
-	${AKF} "Break" -p 0 -t 0 -z -0 -c "Red" -M "${SLEEP_MINS}"
+	afk "Work" -p 5 -t 0 -z -0 -c "Purple" -M "${MINS}"
+	[ $? -gt 0 ] && exit 1
+	afk "Break" -p 5 -t 0 -z -0 -c "Red" -M "${SLEEP_MINS}"
 done
